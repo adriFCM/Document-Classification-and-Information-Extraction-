@@ -32,8 +32,9 @@ cd Document-Classification-and-Information-Extraction-
 ### 2. Create and activate virtual environment
 ```bash
 python -m venv venv
-.\venv\Scripts\Activate.ps1        # Windows
-# source venv/bin/activate         # Mac/Linux
+#.\venv\Scripts\Activate.ps1    # Windows PowerShell
+#.\venv\Scripts\activate        # Windows CMD
+# source venv/bin/activate     # Mac/Linux     
 ```
 
 ### 3. Install dependencies
