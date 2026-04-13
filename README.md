@@ -14,8 +14,7 @@ The goal of this project is to develop a technical solution capable of classifyi
 ├── notebooks/
 │   ├── 01_data_collection.ipynb        ← download all datasets
 │   ├── 02_preprocessing.ipynb          ← clean and normalize all datasets
-│   ├── 03_information_extraction.ipynb ← invoice field extraction + SROIE eval
-│   └── 03_information_extraction.md    ← detailed write-up of notebook 03
+│   └── 03_information_extraction.ipynb ← invoice field extraction + SROIE eval
 ├── src/
 │   ├── information_extraction.py ← extract_invoice_fields(text) -> dict
 │   ├── pdf_loader.py             ← PDF → text, pdfplumber with OCR fallback
@@ -159,8 +158,5 @@ qualitatively on real invoice PDFs via the microservice.
 | `invoice_date` | 95.9 % | 96.0 %  |
 | `issuer`       | 61.5 % | 90.1 %  |
 | `total`        | 64.4 % | 71.0 %  |
-
-Full methodology, bug history, and design decisions are documented in
-[`notebooks/03_information_extraction.md`](notebooks/03_information_extraction.md).
 
 ---
