@@ -11,10 +11,10 @@ const FIELD_LABELS = {
 }
 
 const CATEGORY_STYLES = {
-  invoice:  { color: '#a3e635', colorLight: '#4d7c0f', label: 'Invoice',  description: 'Field extraction triggered' },
-  contract: { color: '#60a5fa', colorLight: '#1d4ed8', label: 'Contract', description: 'No extraction for contracts' },
-  email:    { color: '#f59e0b', colorLight: '#b45309', label: 'Email',    description: 'No extraction for emails' },
-  news:     { color: '#f87171', colorLight: '#b91c1c', label: 'News',     description: 'No extraction for news' },
+  invoice:  { color: '#a3e635', colorLight: '#3f6212', label: 'Invoice',  description: 'Field extraction triggered' },
+  contract: { color: '#86efac', colorLight: '#16a34a', label: 'Contract', description: 'No extraction for contracts' },
+  email:    { color: '#4ade80', colorLight: '#15803d', label: 'Email',    description: 'No extraction for emails' },
+  news:     { color: '#34d399', colorLight: '#047857', label: 'News',     description: 'No extraction for news' },
 }
 
 // ─── CONFIGURATION ────────────────────────────────────────────────────────────
@@ -62,75 +62,56 @@ export default function Home() {
     text:       dark ? '#ffffff'  : '#0a0a0a',
     textMuted:  dark ? '#555555'  : '#888888',
     textDim:    dark ? '#333333'  : '#bbbbbb',
-    accentText: dark ? '#a3e635'  : '#4d7c0f',
+    accentText: dark ? '#a3e635'  : '#3f6212',
   }
 
   useEffect(() => {
-    // only run this when we enter the processing step
     if (step !== 'processing') return
-
-    // animate the processing dots cycling through steps
     const interval = setInterval(() => setTick(n => n + 1), 600)
 
-    // this is the main function that calls the backend
-    // it's async because we need to wait for the network response
     async function classify() {
       try {
         let data
 
         if (USE_MOCK) {
           // ── MOCK MODE ────────────────────────────────────────────────────
-          // Simulate network delay so the UI feels realistic
           await new Promise(resolve => setTimeout(resolve, 2500))
           data = MOCK_RESULT
           // ─────────────────────────────────────────────────────────────────
         } else {
           // ── REAL API MODE ─────────────────────────────────────────────────
-          // FormData is how you send a file over HTTP
-          // It's like a form submission with the PDF attached
           const formData = new FormData()
-          formData.append('file', file) // 'file' must match what the backend expects
+          formData.append('file', file)
 
-          // Send the PDF to the backend and wait for a response
           const response = await fetch(API_URL, {
             method: 'POST',
             body: formData
           })
 
-          // If the backend returned an error (e.g. 500), throw it
           if (!response.ok) {
             throw new Error(`Backend error: ${response.status}`)
           }
 
-          // Parse the JSON response from the backend
-          // This will look like: { category, confidence, fields }
           data = await response.json()
           // ─────────────────────────────────────────────────────────────────
         }
 
-        // Store the result and move to the result screen
         setResult(data)
         setStep('result')
 
       } catch (err) {
-        // If anything went wrong, show the error and go back to upload
         console.error('Classification failed:', err)
         setError('Something went wrong. Please try again.')
         setStep('upload')
       }
     }
 
-    // call the async function
     classify()
-
-    // cleanup: stop the dot animation when this effect is done
     return () => clearInterval(interval)
   }, [step])
 
-  // animate the confidence bar when result appears
   useEffect(() => {
     if (step === 'result') {
-      // small delay so the bar animates visibly instead of jumping
       setTimeout(() => setBarWidth(result?.confidence ?? 0), 100)
     } else {
       setBarWidth(0)
@@ -147,6 +128,14 @@ export default function Home() {
   const cat = result ? (CATEGORY_STYLES[result.category] || CATEGORY_STYLES.invoice) : null
   const catColor = cat ? (dark ? cat.color : cat.colorLight) : '#a3e635'
   const dots = ['Extracting text', 'Running classifier', 'Extracting fields']
+
+  // pills match CATEGORY_STYLES colors exactly
+  const pills = [
+    { label: 'Invoice',  color: dark ? '#a3e635' : '#3f6212' },
+    { label: 'Contract', color: dark ? '#86efac' : '#16a34a' },
+    { label: 'Email',    color: dark ? '#4ade80' : '#15803d' },
+    { label: 'News',     color: dark ? '#34d399' : '#047857' },
+  ]
 
   return (
     <div style={{
@@ -304,17 +293,13 @@ export default function Home() {
                 <input id="file-input" type="file" accept=".pdf" style={{ display: 'none' }}
                   onChange={(e) => {
                     setFile(e.target.files[0])
-                    setError(null) // clear any previous error when a new file is selected
+                    setError(null)
                   }} />
               </div>
 
+              {/* Category pills — each is a different shade of green */}
               <div style={{ display: 'flex', gap: '8px', marginBottom: '12px', flexWrap: 'wrap' }}>
-                {[
-                  { label: 'Invoice',  color: '#a3e635' },
-                  { label: 'Contract', color: '#4ade80' },
-                  { label: 'Email',    color: '#34d399' },
-                  { label: 'News',     color: '#2dd4bf' },
-                ].map(c => (
+                {pills.map(c => (
                   <span key={c.label} style={{
                     fontSize: '11px',
                     padding: '3px 10px',
@@ -456,10 +441,10 @@ export default function Home() {
                     fontSize: '11px',
                     fontFamily: 'monospace',
                     color: t.accentText,
-                    backgroundColor: dark ? 'rgba(163,230,53,0.08)' : 'rgba(77,124,15,0.08)',
+                    backgroundColor: dark ? 'rgba(163,230,53,0.08)' : 'rgba(63,98,18,0.08)',
                     padding: '2px 8px',
                     borderRadius: '999px',
-                    border: `1px solid ${dark ? 'rgba(163,230,53,0.15)' : 'rgba(77,124,15,0.2)'}`
+                    border: `1px solid ${dark ? 'rgba(163,230,53,0.15)' : 'rgba(63,98,18,0.2)'}`
                   }}>
                     6 fields
                   </span>
