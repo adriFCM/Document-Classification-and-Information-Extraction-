@@ -20,11 +20,21 @@ from typing import Optional
 
 
 # --- dates ----------------------------------------------------------------
+_MONTHS = r'(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*'
+
 _DATE_PATTERNS = [
-    r'\b(\d{1,2}[/\-\.]\d{1,2}[/\-\.]\d{2,4})\b',
-    r'\b(\d{4}[/\-\.]\d{1,2}[/\-\.]\d{1,2})\b',
-    r'\b(\d{1,2}\s+(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\.?\s+\d{2,4})\b',
-    r'\b((?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\.?\s+\d{1,2},?\s+\d{2,4})\b',
+    # DD/MM/YYYY, MM-DD-YYYY, etc. — separator-delimited, validate day ≤ 31 and month ≤ 12
+    r'\b((?:0?[1-9]|[12]\d|3[01])[/\-\.](?:0?[1-9]|1[0-2])[/\-\.](?:\d{4}|\d{2}))\b',
+    # YYYY/MM/DD or YYYY-MM-DD
+    r'\b(\d{4}[/\-\.](?:0?[1-9]|1[0-2])[/\-\.](?:0?[1-9]|[12]\d|3[01]))\b',
+    # DD-MON-YYYY or DD-MON-YY  (e.g. 24-MAR-2018, 25-DEC-18)
+    r'\b((?:0?[1-9]|[12]\d|3[01])[/\-\.]' + _MONTHS + r'[/\-\.](?:\d{4}|\d{2}))\b',
+    # Compact DDMMYYYY or YYYYMMDD (8 digits only, basic range check)
+    r'\b((?:0[1-9]|[12]\d|3[01])(?:0[1-9]|1[0-2])\d{4})\b',
+    r'\b(\d{4}(?:0[1-9]|1[0-2])(?:0[1-9]|[12]\d|3[01]))\b',
+    # "15 March 2024" or "March 15, 2024"
+    r'\b((?:0?[1-9]|[12]\d|3[01])\s+' + _MONTHS + r'\.?\s+\d{2,4})\b',
+    r'\b(' + _MONTHS + r'\.?\s+(?:0?[1-9]|[12]\d|3[01]),?\s+\d{2,4})\b',
 ]
 _DATE_RE = re.compile('|'.join(_DATE_PATTERNS), re.IGNORECASE)
 

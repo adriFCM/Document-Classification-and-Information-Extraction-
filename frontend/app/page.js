@@ -19,10 +19,10 @@ const CATEGORY_STYLES = {
 
 // ─── CONFIGURATION ────────────────────────────────────────────────────────────
 // When the backend is ready, change this to 'false' to use the real API
-const USE_MOCK = true
+const USE_MOCK = false
 
 // The URL of the Python backend — change this if the backend runs on a different port
-const API_URL = 'http://localhost:8000/predict'
+const API_URL = 'http://localhost:8000/classify'
 
 // Mock data that simulates what the backend would return
 // This is used when USE_MOCK is true
@@ -89,10 +89,21 @@ export default function Home() {
           })
 
           if (!response.ok) {
-            throw new Error(`Backend error: ${response.status}`)
+            let detail = `Backend error: ${response.status}`
+            try {
+              const errBody = await response.json()
+              if (errBody?.detail) detail = errBody.detail
+            } catch (_) {}
+            throw new Error(detail)
           }
 
-          data = await response.json()
+          const raw = await response.json()
+          // Normalise backend shape → frontend shape
+          data = {
+            category:   raw.label,
+            confidence: Math.round((raw.confidence ?? 0) * 100),
+            fields:     raw.invoice_fields ?? null,
+          }
           // ─────────────────────────────────────────────────────────────────
         }
 
@@ -101,7 +112,7 @@ export default function Home() {
 
       } catch (err) {
         console.error('Classification failed:', err)
-        setError('Something went wrong. Please try again.')
+        setError(err.message || 'Something went wrong. Please try again.')
         setStep('upload')
       }
     }
