@@ -16,7 +16,35 @@ from __future__ import annotations
 
 import re
 from dataclasses import asdict, dataclass
+from pathlib import Path
 from typing import Optional
+
+# Optional CRF model for issuer / recipient. Loaded lazily so the module still
+# imports if sklearn-crfsuite or the model file are missing.
+_CRF_MODEL_PATH = Path(__file__).resolve().parent.parent / "models" / "crf_invoice.pkl"
+_crf = None
+_crf_tried = False
+
+
+def _get_crf():
+    global _crf, _crf_tried
+    if _crf_tried:
+        return _crf
+    _crf_tried = True
+    try:
+        from .crf_extractor import CRFInvoiceExtractor  # type: ignore
+    except ImportError:
+        try:
+            from crf_extractor import CRFInvoiceExtractor  # type: ignore
+        except ImportError:
+            return None
+    if not _CRF_MODEL_PATH.exists():
+        return None
+    try:
+        _crf = CRFInvoiceExtractor.load(_CRF_MODEL_PATH)
+    except Exception:
+        _crf = None
+    return _crf
 
 
 # --- dates ----------------------------------------------------------------
@@ -35,6 +63,8 @@ _DATE_PATTERNS = [
     # "15 March 2024" or "March 15, 2024"
     r'\b((?:0?[1-9]|[12]\d|3[01])\s+' + _MONTHS + r'\.?\s+\d{2,4})\b',
     r'\b(' + _MONTHS + r'\.?\s+(?:0?[1-9]|[12]\d|3[01]),?\s+\d{2,4})\b',
+    # "MARCH.06.2024" / "March-06-2024" — month first, any of . / - _ as sep
+    r'\b(' + _MONTHS + r'[\./\-](?:0?[1-9]|[12]\d|3[01])[\./\-]\d{2,4})\b',
 ]
 _DATE_RE = re.compile('|'.join(_DATE_PATTERNS), re.IGNORECASE)
 
@@ -53,9 +83,14 @@ def extract_invoice_date(text: str) -> Optional[str]:
     return hits[0] if hits else None
 
 
+_DUE_DATE_LABEL = re.compile(
+    r'\b(due[\s_]*date|payment[\s_]*due|pay[\s_]*by)\b', re.IGNORECASE,
+)
+
+
 def extract_due_date(text: str) -> Optional[str]:
     for line in text.splitlines():
-        if re.search(r'\b(due\s*date|payment\s*due|pay\s*by)\b', line, re.IGNORECASE):
+        if _DUE_DATE_LABEL.search(line):
             hits = _find_dates(line)
             if hits:
                 return hits[0]
@@ -66,17 +101,37 @@ def extract_due_date(text: str) -> Optional[str]:
 
 
 # --- invoice number -------------------------------------------------------
-_INVOICE_NO_RE = re.compile(
-    r'(?:invoice\s*(?:no|number|num|#)\.?\s*[:#]?\s*'
-    r'|inv\s*[#:]\s*'
-    r'|bill\s*no\.?\s*[:#]?\s*)'
-    r'([A-Z0-9][A-Z0-9\-/]{2,})',
+_INVOICE_NO_LABEL = re.compile(
+    r'(?:invoice\s*(?:no|number|num|#)\.?|inv\s*[#:]|bill\s*no\.?)'
+    r'\s*[:#]?\s*',
     re.IGNORECASE,
 )
+_INVOICE_NO_VALUE = re.compile(r'(#?[A-Z0-9][A-Z0-9\-/]{2,})')
+# Standalone "#1234" style near top of doc, used as fallback.
+_HASH_NUM_RE = re.compile(r'^\s*(#\d{3,})\s*$', re.MULTILINE)
 
 
 def extract_invoice_number(text: str) -> Optional[str]:
-    m = _INVOICE_NO_RE.search(text)
+    # Label may be on one line with the value on a following (possibly blank-
+    # separated) line — scan line by line so we can look ahead a few lines.
+    lines = text.splitlines()
+    for i, line in enumerate(lines):
+        lm = _INVOICE_NO_LABEL.search(line)
+        if not lm:
+            continue
+        tail = line[lm.end():]
+        vm = _INVOICE_NO_VALUE.search(tail)
+        if vm:
+            return vm.group(1)
+        for j in range(i + 1, min(i + 4, len(lines))):
+            nxt = lines[j].strip()
+            if not nxt:
+                continue
+            vm = _INVOICE_NO_VALUE.match(nxt)
+            if vm:
+                return vm.group(1)
+            break
+    m = _HASH_NUM_RE.search(text)
     return m.group(1) if m else None
 
 
@@ -91,7 +146,7 @@ _AMOUNT_RE = re.compile(
     r'\s*(?:RM|MYR|USD|EUR|GBP|NOK|SEK|DKK)?'
 )
 _TOTAL_KEYWORDS = re.compile(
-    r'\b(grand\s*total|total\s*amount|total\s*due|total|amount\s*due|balance\s*due)\b',
+    r'\b(grand\s*total|total\s*amount|total\s*due|totals?|amount\s*due|balance\s*due)\b',
     re.IGNORECASE,
 )
 
@@ -154,19 +209,35 @@ _COMPANY_SUFFIX = re.compile(
 
 
 _RECIPIENT_MARKER = re.compile(
-    r'\b(bill\s*to|sold\s*to|ship\s*to|customer|recipient|invoice\s*to)\b',
+    r'\b(bill(?:ed)?\s*to|sold\s*to|ship\s*to|customer|recipient|invoice\s*to|issued\s*to)\b',
     re.IGNORECASE,
 )
 
 # Skip standalone document-type words when they're styled as a header
-# (large "INVOICE" / "RECEIPT" titles above the letterhead).
+# (large "INVOICE" / "RECEIPT" titles above the letterhead), and also skip
+# template/cover lines like "White Minimalist Business Invoice" whose last
+# word is a document type.
 _DOC_TYPE_RE = re.compile(
-    r'^(invoice|receipt|bill|statement|quotation|quote|tax\s*invoice)$',
+    r'^(invoice|receipt|bill|statement|quotation|quote|tax\s*invoice'
+    r'|invoice\s*/\s*tax\s*receipt)$',
+    re.IGNORECASE,
+)
+_TEMPLATE_TITLE_RE = re.compile(
+    r'\b(invoice|receipt|bill|statement|quotation)\s*$',
     re.IGNORECASE,
 )
 
 
 def extract_issuer(text: str) -> Optional[str]:
+    crf = _get_crf()
+    if crf is not None:
+        pred = crf.predict(text).get("ISSUER")
+        if pred:
+            return pred
+    return _rule_based_issuer(text)
+
+
+def _rule_based_issuer(text: str) -> Optional[str]:
     # Scan a bit deeper than 6 lines so we survive a logo/letterhead block, but
     # stop at the first recipient marker — everything past that belongs to the
     # customer, not the issuer.
@@ -179,6 +250,10 @@ def extract_issuer(text: str) -> Optional[str]:
             break
         if _DOC_TYPE_RE.match(ln):
             continue
+        # Template cover titles end with a document word, e.g.
+        # "White Minimalist Business Invoice" — skip them too.
+        if _TEMPLATE_TITLE_RE.search(ln) and len(ln.split()) >= 3:
+            continue
         head_lines.append(ln)
         if len(head_lines) >= 8:
             break
@@ -190,26 +265,83 @@ def extract_issuer(text: str) -> Optional[str]:
 
 # --- recipient ------------------------------------------------------------
 _RECIPIENT_LABEL_RE = re.compile(
-    r'(?:bill\s*to|sold\s*to|ship\s*to|invoice\s*to|customer|recipient)\s*[:\-]?\s*(.*)',
+    r'(?:bill(?:ed)?\s*to|sold\s*to|ship\s*to|invoice\s*to|issued\s*to'
+    r'|customer|recipient)\s*[:\-]?\s*(.*)',
+    re.IGNORECASE,
+)
+# "To:" alone on its own line — too generic to search inside text, so only
+# match when the line is effectively just the label.
+_TO_LABEL_LINE_RE = re.compile(r'^\s*to\s*[:\-]\s*(.*)$', re.IGNORECASE)
+
+# Skip lines that are clearly not a recipient name (amounts, dates, labels).
+_NON_NAME_RE = re.compile(
+    r'(\$|€|£|\bRM\b|\bUSD\b|\bEUR\b|\bGBP\b|\d{2,}|:)',
+    re.IGNORECASE,
+)
+# Common table headers that should never be returned as a recipient.
+_TABLE_HEADER_RE = re.compile(
+    r'^(description|item|items|qty|quantity|rate|price|amount|total|tax|subtotal'
+    r'|hours|um|net\s+price|net\s+worth|gross\s+worth|vat|no\.?)\b',
+    re.IGNORECASE,
+)
+# Secondary field labels that may sit on the same line as "Bill To:" — used to
+# trim the tail so we don't return "X Invoice number: Y".
+_SECONDARY_LABEL_RE = re.compile(
+    r'\s+(invoice\s*(?:no|number|num|#)|date|term|due|po\s*#|tel|phone|email)\b',
     re.IGNORECASE,
 )
 
 
+def _clean_recipient_tail(tail: str) -> str:
+    m = _SECONDARY_LABEL_RE.search(tail)
+    if m:
+        tail = tail[: m.start()]
+    return tail.strip(" :;-,")
+
+
+def _next_name_line(lines, start):
+    for j in range(start, min(start + 5, len(lines))):
+        nxt = lines[j].strip()
+        if not nxt:
+            continue
+        if _TABLE_HEADER_RE.search(nxt):
+            continue
+        if _NON_NAME_RE.search(nxt):
+            continue
+        return nxt
+    return None
+
+
+def _resolve_recipient(tail: str, lines, i):
+    cleaned = _clean_recipient_tail(tail)
+    if cleaned and not _TABLE_HEADER_RE.search(cleaned):
+        return cleaned
+    return _next_name_line(lines, i + 1)
+
+
 def extract_recipient(text: str) -> Optional[str]:
+    crf = _get_crf()
+    if crf is not None:
+        pred = crf.predict(text).get("RECIPIENT")
+        if pred:
+            return pred
+    return _rule_based_recipient(text)
+
+
+def _rule_based_recipient(text: str) -> Optional[str]:
     lines = text.splitlines()
     for i, line in enumerate(lines):
         m = _RECIPIENT_LABEL_RE.search(line)
-        if not m:
+        if m:
+            res = _resolve_recipient(m.group(1).strip(), lines, i)
+            if res:
+                return res
             continue
-        tail = m.group(1).strip()
-        if tail:
-            return tail
-        # Label alone on its own line (e.g. "Bill To" / "Bill To:") —
-        # return the next non-empty line.
-        for j in range(i + 1, min(i + 4, len(lines))):
-            nxt = lines[j].strip()
-            if nxt:
-                return nxt
+        tm = _TO_LABEL_LINE_RE.match(line)
+        if tm:
+            res = _resolve_recipient(tm.group(1).strip(), lines, i)
+            if res:
+                return res
     return None
 
 

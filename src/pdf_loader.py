@@ -49,7 +49,7 @@ def _extract_with_ocr(path_or_bytes: PathLike) -> str:
 
     pages = []
     for page in pdf:
-        pil_image = page.render(scale=2.0).to_pil()
+        pil_image = page.render(scale=3.0).to_pil()
         pages.append(pytesseract.image_to_string(pil_image))
     return '\n'.join(pages)
 
