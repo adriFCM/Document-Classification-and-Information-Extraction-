@@ -12,8 +12,13 @@ The goal of this project is to develop a technical solution capable of classifyi
 │   ├── processed/    ← cleaned text after preprocessing (one CSV per dataset)
 │   └── labeled/      ← final combined CSV for model training
 ├── notebooks/
-│   ├── 01_data_collection.ipynb      ← download all datasets
-│   └── 02_preprocessing.ipynb        ← clean and normalize all datasets
+│   ├── 01_data_collection.ipynb        ← download all datasets
+│   ├── 02_preprocessing.ipynb          ← clean and normalize all datasets
+│   └── 03_information_extraction.ipynb ← invoice field extraction + SROIE eval
+├── src/
+│   ├── information_extraction.py ← extract_invoice_fields(text) -> dict
+│   ├── pdf_loader.py             ← PDF → text, pdfplumber with OCR fallback
+│   └── service.py                ← FastAPI microservice (GET /health, POST /extract)
 ├── setup.py          ← creates folder structure automatically
 ├── requirements.txt
 └── README.md
@@ -58,9 +63,37 @@ python setup.py
 
 ### 6. Run the notebooks in order
 ```
-notebooks/01_data_collection.ipynb   ← downloads all 4 datasets automatically
-notebooks/02_preprocessing.ipynb     ← cleans and generates data/labeled/dataset.csv
+notebooks/01_data_collection.ipynb        ← downloads all 4 datasets automatically
+notebooks/02_preprocessing.ipynb          ← cleans and generates data/labeled/dataset.csv
+notebooks/03_information_extraction.ipynb ← invoice field extraction + SROIE eval
 ```
+
+### 7. Run the extraction microservice (live demo)
+```bash
+# macOS only — required by pytesseract for the OCR fallback path
+brew install tesseract
+
+uvicorn src.service:app --port 8000
+```
+Then open `http://localhost:8000/docs` in a browser, expand `POST /extract`,
+click **Try it out**, and upload any invoice PDF. The response is the six
+extracted fields as JSON:
+```json
+{
+  "filename": "invoice.pdf",
+  "fields": {
+    "invoice_number": "INV-2024-001",
+    "invoice_date":   "15/03/2024",
+    "due_date":       "15/04/2024",
+    "issuer":         "ACME TRADING SDN BHD",
+    "recipient":      "Foo Customer Ltd",
+    "total":          "106.00"
+  }
+}
+```
+The same code handles digitally-generated PDFs (fast path via `pdfplumber`)
+and scanned PDFs (OCR fallback via `pypdfium2` + `pytesseract`) without any
+configuration change.
 
 ---
 
@@ -100,5 +133,30 @@ The final labeled dataset is at `data/labeled/dataset.csv` with **4,783 document
 | invoice | 946 |
 | contract | 496 |
 | **Total** | **4,783** |
+
+---
+
+## 🧾 Information Extraction (Invoices)
+
+Notebook 03 and the `src/` package implement rule-based extraction of six
+fields from invoices classified upstream as `invoice`:
+
+`invoice_number` · `invoice_date` · `due_date` · `issuer` · `recipient` · `total`
+
+The extractor is pure regex + small heuristics (no generative AI, no
+pretrained document-understanding models), per the assignment rules.
+
+### Scores on SROIE 2019 (973 receipts)
+
+SROIE only labels 3 of our 6 fields (`company` → `issuer`, `date` →
+`invoice_date`, `total`). The other three fields (`invoice_number`,
+`due_date`, `recipient`) have no SROIE ground truth and are validated
+qualitatively on real invoice PDFs via the microservice.
+
+| Field          | Exact  | Relaxed |
+| -------------- | ------ | ------- |
+| `invoice_date` | 95.9 % | 96.0 %  |
+| `issuer`       | 61.5 % | 90.1 %  |
+| `total`        | 64.4 % | 71.0 %  |
 
 ---
