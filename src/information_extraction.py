@@ -48,37 +48,28 @@ def _get_crf():
 
 
 # --- dates ----------------------------------------------------------------
-_MONTHS = r'(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*'
-
-_DATE_PATTERNS = [
-    # DD/MM/YYYY, MM-DD-YYYY, etc. — separator-delimited, validate day ≤ 31 and month ≤ 12
-    r'\b((?:0?[1-9]|[12]\d|3[01])[/\-\.](?:0?[1-9]|1[0-2])[/\-\.](?:\d{4}|\d{2}))\b',
-    # YYYY/MM/DD or YYYY-MM-DD
-    r'\b(\d{4}[/\-\.](?:0?[1-9]|1[0-2])[/\-\.](?:0?[1-9]|[12]\d|3[01]))\b',
-    # DD-MON-YYYY or DD-MON-YY  (e.g. 24-MAR-2018, 25-DEC-18)
-    r'\b((?:0?[1-9]|[12]\d|3[01])[/\-\.]' + _MONTHS + r'[/\-\.](?:\d{4}|\d{2}))\b',
-    # Compact DDMMYYYY or YYYYMMDD (8 digits only, basic range check)
-    r'\b((?:0[1-9]|[12]\d|3[01])(?:0[1-9]|1[0-2])\d{4})\b',
-    r'\b(\d{4}(?:0[1-9]|1[0-2])(?:0[1-9]|[12]\d|3[01]))\b',
-    # "15 March 2024" or "March 15, 2024"
-    r'\b((?:0?[1-9]|[12]\d|3[01])\s+' + _MONTHS + r'\.?\s+\d{2,4})\b',
-    r'\b(' + _MONTHS + r'\.?\s+(?:0?[1-9]|[12]\d|3[01]),?\s+\d{2,4})\b',
-    # "MARCH.06.2024" / "March-06-2024" — month first, any of . / - _ as sep
-    r'\b(' + _MONTHS + r'[\./\-](?:0?[1-9]|[12]\d|3[01])[\./\-]\d{2,4})\b',
-]
-_DATE_RE = re.compile('|'.join(_DATE_PATTERNS), re.IGNORECASE)
-
-
-def _find_dates(text: str):
-    return [next(g for g in m.groups() if g) for m in _DATE_RE.finditer(text)]
+from .date_utils import DATE_RE as _DATE_RE, find_dates as _find_dates  # noqa: F401
 
 
 def extract_invoice_date(text: str) -> Optional[str]:
-    for line in text.splitlines():
-        if re.search(r'\b(invoice\s*date|date)\b', line, re.IGNORECASE):
+    lines = text.splitlines()
+    for i, line in enumerate(lines):
+        if re.search(r'\b(invoice\s*date|date\s*of\s*issue|date)\b', line, re.IGNORECASE):
             hits = _find_dates(line)
             if hits:
                 return hits[0]
+            # Label-only line — look ahead up to 2 non-empty lines.
+            seen = 0
+            for j in range(i + 1, min(i + 5, len(lines))):
+                nxt = lines[j].strip()
+                if not nxt:
+                    continue
+                seen += 1
+                nxt_hits = _find_dates(nxt)
+                if nxt_hits:
+                    return nxt_hits[0]
+                if seen >= 2:
+                    break
     hits = _find_dates(text)
     return hits[0] if hits else None
 
@@ -89,11 +80,23 @@ _DUE_DATE_LABEL = re.compile(
 
 
 def extract_due_date(text: str) -> Optional[str]:
-    for line in text.splitlines():
+    lines = text.splitlines()
+    for i, line in enumerate(lines):
         if _DUE_DATE_LABEL.search(line):
             hits = _find_dates(line)
             if hits:
                 return hits[0]
+            seen = 0
+            for j in range(i + 1, min(i + 5, len(lines))):
+                nxt = lines[j].strip()
+                if not nxt:
+                    continue
+                seen += 1
+                nxt_hits = _find_dates(nxt)
+                if nxt_hits:
+                    return nxt_hits[0]
+                if seen >= 2:
+                    break
     m = re.search(r'\bnet\s*(\d{1,3})\b', text, re.IGNORECASE)
     if m:
         return f'NET{m.group(1)}'
@@ -138,11 +141,11 @@ def extract_invoice_number(text: str) -> Optional[str]:
 # --- total ----------------------------------------------------------------
 _AMOUNT_RE = re.compile(
     r'(?:RM|MYR|USD|EUR|GBP|NOK|SEK|DKK|\$|€|£)?\s*'
-    # Either a properly grouped number (1,234 / 1,234.56) OR a plain run of
-    # digits with optional decimals. Grouping alternative requires at least
-    # one [,\s]\d{3} block, otherwise \d{1,3} could consume part of a larger
-    # number like '4000' and leave '0' behind.
-    r'(\d{1,3}(?:[,\s]\d{3})+(?:\.\d{2})?|\d+(?:\.\d{2})?)'
+    # 1) Thousands-grouped with optional dot-decimal: 1,234 or 1,234.56
+    # 2) European decimal comma: 149,97 (exactly 2 digits after, nothing
+    #    right after — avoids eating into thousands-grouped numbers)
+    # 3) Plain: 164 or 164.97
+    r'(\d{1,3}(?:[,\s]\d{3})+(?:\.\d{2})?|\d+,\d{2}(?!\d)|\d+(?:\.\d{2})?)'
     r'\s*(?:RM|MYR|USD|EUR|GBP|NOK|SEK|DKK)?'
 )
 _TOTAL_KEYWORDS = re.compile(
@@ -152,8 +155,14 @@ _TOTAL_KEYWORDS = re.compile(
 
 
 def _as_float(s: str) -> float:
+    s = s.strip().replace(' ', '')
+    # European decimal comma: exactly 2 digits after a single comma, no dot.
+    if re.fullmatch(r'\d+,\d{2}', s):
+        s = s.replace(',', '.')
+    else:
+        s = s.replace(',', '')
     try:
-        return float(s.replace(',', '').replace(' ', ''))
+        return float(s)
     except ValueError:
         return 0.0
 
@@ -209,7 +218,13 @@ _COMPANY_SUFFIX = re.compile(
 
 
 _RECIPIENT_MARKER = re.compile(
-    r'\b(bill(?:ed)?\s*to|sold\s*to|ship\s*to|customer|recipient|invoice\s*to|issued\s*to)\b',
+    r'\b(bill(?:ed)?\s*to|sold\s*to|ship\s*to|customer|recipient|invoice\s*to'
+    r'|issued\s*to|client)\b',
+    re.IGNORECASE,
+)
+
+_SELLER_LABEL_RE = re.compile(
+    r'^\s*(seller|from|vendor|bill\s*from)\s*[:\-]?\s*$',
     re.IGNORECASE,
 )
 
@@ -238,11 +253,20 @@ def extract_issuer(text: str) -> Optional[str]:
 
 
 def _rule_based_issuer(text: str) -> Optional[str]:
-    # Scan a bit deeper than 6 lines so we survive a logo/letterhead block, but
-    # stop at the first recipient marker — everything past that belongs to the
-    # customer, not the issuer.
+    lines = text.splitlines()
+
+    # If a Seller:-style label exists, take the first non-empty line below it.
+    for i, ln in enumerate(lines):
+        if _SELLER_LABEL_RE.match(ln):
+            for j in range(i + 1, min(i + 5, len(lines))):
+                nxt = lines[j].strip()
+                if nxt:
+                    return nxt
+            break
+
+    # Otherwise, original heuristic: scan head lines, prefer company-suffix.
     head_lines: list[str] = []
-    for ln in text.splitlines():
+    for ln in lines:
         ln = ln.strip()
         if not ln:
             continue
@@ -266,7 +290,7 @@ def _rule_based_issuer(text: str) -> Optional[str]:
 # --- recipient ------------------------------------------------------------
 _RECIPIENT_LABEL_RE = re.compile(
     r'(?:bill(?:ed)?\s*to|sold\s*to|ship\s*to|invoice\s*to|issued\s*to'
-    r'|customer|recipient)\s*[:\-]?\s*(.*)',
+    r'|customer|recipient|client)\s*[:\-]?\s*(.*)',
     re.IGNORECASE,
 )
 # "To:" alone on its own line — too generic to search inside text, so only
@@ -356,7 +380,9 @@ class InvoiceFields:
     total: Optional[str] = None
 
 
-def extract_invoice_fields(text: str) -> dict:
+def extract_invoice_fields(text: str, pdf_bytes: Optional[bytes] = None) -> dict:
+    # pdf_bytes is accepted for path-B (layout-aware) wiring in a later task;
+    # currently unused so behaviour is identical to the text-only call.
     return asdict(InvoiceFields(
         invoice_number=extract_invoice_number(text),
         invoice_date=extract_invoice_date(text),
