@@ -87,3 +87,19 @@ def test_extract_invoice_fields_accepts_pdf_bytes_kwarg():
     # Passing pdf_bytes=None must not raise; result should match the text-only call.
     text = "Invoice date: 15/03/2024\nTOTAL: $100.00\n"
     assert extract_invoice_fields(text, pdf_bytes=None) == extract_invoice_fields(text)
+
+
+from src.layout_extractor import extract as layout_extract
+
+
+def test_layout_extract_empty_bytes_returns_all_none():
+    # Zero-byte PDF — pdfplumber will fail gracefully; we must return all-None.
+    result = layout_extract(b"")
+    assert result == {
+        "invoice_number": None,
+        "invoice_date":   None,
+        "due_date":       None,
+        "issuer":         None,
+        "recipient":      None,
+        "total":          None,
+    }
