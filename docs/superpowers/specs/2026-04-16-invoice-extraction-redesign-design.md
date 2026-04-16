@@ -49,10 +49,10 @@ Two extraction paths, chosen at the entry point based on whether PDF bytes are a
 
 ```
 extract_invoice_fields(text, pdf_bytes=None)
-  ├─ pdf_bytes provided  → run path B (layout), then path A (text), merge
+  ├─ pdf_bytes provided  → run both path A (text) and path B (layout), merge
   └─ pdf_bytes is None   → run path A only (unchanged contract)
 
-Path B output merges field-by-field with path A:
+Merge is per-field:
   out[field] = layout[field] if layout[field] is not None else text[field]
 ```
 
@@ -131,7 +131,7 @@ When the label is `Seller:` or `Client:`, the value is a multi-line text block b
 - another known label fires (e.g., `Tax Id:`, `IBAN:`, `Items`),
 - 5 lines captured (safety cap).
 
-Return the first line of the block (the name), dropping address/tax-id lines.
+Return the first captured line (the name); drop address/tax-id lines below it.
 
 **B.6 Multi-page ordering**
 Iterate pages in natural order for most fields. For `total`, prefer the last page first (summary tables live there). First non-None value per field wins.
@@ -194,7 +194,7 @@ New script: `scripts/eval_invoices.py`.
 3. Write `data/processed/invoice_extraction_eval.csv` with per-file results and `non_null_count`.
 4. Print per-field non-null rate. Spot-check the 10 files with lowest `non_null_count` to find systematic failure patterns.
 
-Supporting change: extend `src/pdf_loader.py` (or add `src/image_loader.py`) to accept `.jpg`/`.png` paths by going straight to the pytesseract path. Small change — existing OCR fallback already uses pytesseract.
+Supporting change: extend `src/pdf_loader.py` with an `image_to_text(path_or_bytes)` helper that feeds `.jpg`/`.png` directly to pytesseract. Small change — existing OCR fallback already uses pytesseract.
 
 ### Manual demo check
 
