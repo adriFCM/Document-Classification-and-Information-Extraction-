@@ -27,7 +27,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from src.information_extraction import extract_invoice_fields
 from src.pdf_loader import pdf_to_text
-from src.preprocessing import clean_for_classifier, _INV_SIGNALS
+from src.preprocessing import clean_for_classifier
 
 _MODELS_DIR = Path(__file__).parent.parent / 'models'
 
@@ -42,13 +42,6 @@ def _load_models():
             'Run notebook 04_classification.ipynb first to train and save the models.'
         )
     return joblib.load(tfidf_path), joblib.load(clf_path)
-
-
-_INV_OVERRIDE_THRESHOLD = 4   # number of distinct invoice signals needed to override
-
-def _count_invoice_signals(text: str) -> int:
-    """Count how many distinct invoice indicator patterns fire on raw text."""
-    return sum(1 for _, pattern in _INV_SIGNALS if pattern.search(text))
 
 
 def _predict_proba(clf, X) -> np.ndarray:
@@ -103,22 +96,11 @@ async def classify(file: UploadFile = File(...)):
     proba      = {cls: round(float(p), 4) for cls, p in zip(clf.classes_, proba_arr)}
     confidence = round(float(proba[label]), 4)
 
-    # ── Invoice keyword override ──────────────────────────────────────────────
-    # If the model is uncertain AND the raw text fires enough hard invoice
-    # signals, override to invoice. This catches borderline cases (e.g. an
-    # invoice that reads like an email) where the model under-predicts invoice
-    # due to the small training class.
-    inv_signals = _count_invoice_signals(raw_text)
-    if label != 'invoice' and inv_signals >= _INV_OVERRIDE_THRESHOLD:
-        label      = 'invoice'
-        confidence = round(float(proba.get('invoice', 0.0)), 4)
-
     response = {
-        'filename':    file.filename,
-        'label':       label,
-        'confidence':  confidence,
-        'proba':       proba,
-        'inv_signals': inv_signals,   # useful for debugging during demo
+        'filename':   file.filename,
+        'label':      label,
+        'confidence': confidence,
+        'proba':      proba,
     }
 
     if label == 'invoice':
