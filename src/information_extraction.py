@@ -141,11 +141,15 @@ def extract_invoice_number(text: str) -> Optional[str]:
 # --- total ----------------------------------------------------------------
 _AMOUNT_RE = re.compile(
     r'(?:RM|MYR|USD|EUR|GBP|NOK|SEK|DKK|\$|€|£)?\s*'
-    # 1) Thousands-grouped with optional dot-decimal: 1,234 or 1,234.56
-    # 2) European decimal comma: 149,97 (exactly 2 digits after, nothing
-    #    right after — avoids eating into thousands-grouped numbers)
-    # 3) Plain: 164 or 164.97
-    r'(\d{1,3}(?:[,\s]\d{3})+(?:\.\d{2})?|\d+,\d{2}(?!\d)|\d+(?:\.\d{2})?)'
+    # 1) US thousands: 1,234 or 1,234.56
+    # 2) EU thousands (space): 1 234 or 1 234,56
+    # 3) European decimal comma: 149,97 (no trailing digit — doesn't eat
+    #    into a thousands-grouped number)
+    # 4) Plain: 164 or 164.97
+    r'(\d{1,3}(?:,\d{3})+(?:\.\d{2})?'
+    r'|\d{1,3}(?:\s\d{3})+(?:,\d{2})?'
+    r'|\d+,\d{2}(?!\d)'
+    r'|\d+(?:\.\d{2})?)'
     r'\s*(?:RM|MYR|USD|EUR|GBP|NOK|SEK|DKK)?'
 )
 _TOTAL_KEYWORDS = re.compile(
@@ -180,13 +184,24 @@ def extract_total(text: str) -> Optional[str]:
     """
     lines = text.splitlines()
     candidates: list[tuple[str, bool]] = []
+    _YEAR_LIKE = re.compile(r'^(?:19|20)\d{2}$')
+
+    def _amounts_in(line: str) -> list[str]:
+        # A line that contains a date is not an amount line — OCR sometimes
+        # puts a date right under a "Total" label. Parts of the date (day,
+        # month) would otherwise be picked up as bare integers.
+        if _DATE_RE.search(line):
+            return []
+        amounts = _AMOUNT_RE.findall(line)
+        return [a for a in amounts if not _YEAR_LIKE.fullmatch(a.strip())]
+
     for i, line in enumerate(lines):
         if not _TOTAL_KEYWORDS.search(line):
             continue
         if re.search(r'sub\s*total', line, re.IGNORECASE):
             continue
         is_round = bool(re.search(r'round', line, re.IGNORECASE))
-        amounts = _AMOUNT_RE.findall(line)
+        amounts = _amounts_in(line)
         if amounts:
             candidates.append((amounts[-1], is_round))
             continue
@@ -196,7 +211,7 @@ def extract_total(text: str) -> Optional[str]:
             if not nxt:
                 continue
             seen += 1
-            nxt_amounts = _AMOUNT_RE.findall(nxt)
+            nxt_amounts = _amounts_in(nxt)
             if nxt_amounts:
                 candidates.append((nxt_amounts[-1], is_round))
                 break
@@ -380,10 +395,12 @@ class InvoiceFields:
     total: Optional[str] = None
 
 
-def extract_invoice_fields(text: str, pdf_bytes: Optional[bytes] = None) -> dict:
-    # pdf_bytes is accepted for path-B (layout-aware) wiring in a later task;
-    # currently unused so behaviour is identical to the text-only call.
-    return asdict(InvoiceFields(
+def extract_invoice_fields(
+    text: str,
+    pdf_bytes: Optional[bytes] = None,
+    image_bytes: Optional[bytes] = None,
+) -> dict:
+    text_result = asdict(InvoiceFields(
         invoice_number=extract_invoice_number(text),
         invoice_date=extract_invoice_date(text),
         due_date=extract_due_date(text),
@@ -391,3 +408,34 @@ def extract_invoice_fields(text: str, pdf_bytes: Optional[bytes] = None) -> dict
         recipient=extract_recipient(text),
         total=extract_total(text),
     ))
+
+    layout_result: Optional[dict] = None
+    if pdf_bytes is not None:
+        from . import layout_extractor
+        layout_result = layout_extractor.extract(pdf_bytes)
+    elif image_bytes is not None:
+        from . import layout_extractor
+        from .pdf_loader import image_to_words
+        try:
+            words = image_to_words(image_bytes)
+            layout_result = layout_extractor.extract_from_words(words)
+        except Exception:
+            layout_result = None
+
+    if layout_result is None:
+        return text_result
+    return _merge(text_result, layout_result)
+
+
+def _merge(text_result: dict, layout_result: dict) -> dict:
+    """Per-field merge of path A (text) and path B (layout) results.
+
+    Layout wins whenever it has a value: bbox-aware extraction respects columns
+    and won't concatenate issuer+recipient the way flat-text OCR does. Text
+    only fills fields where layout returned None.
+    """
+    out = dict(text_result)
+    for k, lv in layout_result.items():
+        if lv is not None:
+            out[k] = lv
+    return out

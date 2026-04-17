@@ -103,3 +103,92 @@ def test_layout_extract_empty_bytes_returns_all_none():
         "recipient":      None,
         "total":          None,
     }
+
+
+from src.layout_extractor import find_value_for_label
+
+
+def test_find_value_right_of_label():
+    # Label "Date of issue:" at x=100..200 on line y=50.
+    # Value "07/29/2011" at x=400 on same line.
+    words = [
+        {"text": "Date",   "x0": 100, "x1": 130, "top": 50, "bottom": 60},
+        {"text": "of",     "x0": 135, "x1": 150, "top": 50, "bottom": 60},
+        {"text": "issue:", "x0": 155, "x1": 200, "top": 50, "bottom": 60},
+        {"text": "07/29/2011", "x0": 400, "x1": 470, "top": 50, "bottom": 60},
+    ]
+    got = find_value_for_label([r"date of issue"], words)
+    assert got == "07/29/2011"
+
+
+def test_find_value_below_label():
+    # Label "Seller:" at x=100..150 on line y=50.
+    # Value "Wood-Kim" at x=100..160 on line y=80 (same column).
+    words = [
+        {"text": "Seller:",  "x0": 100, "x1": 150, "top": 50, "bottom": 60},
+        {"text": "Wood-Kim", "x0": 100, "x1": 160, "top": 80, "bottom": 90},
+    ]
+    got = find_value_for_label([r"seller"], words)
+    assert got == "Wood-Kim"
+
+
+def test_find_value_returns_none_when_label_absent():
+    words = [{"text": "Hello", "x0": 0, "x1": 50, "top": 0, "bottom": 10}]
+    assert find_value_for_label([r"date"], words) is None
+
+
+def test_total_ignores_bare_year():
+    # "Total" line has a year hanging around (OCR noise) plus a real amount.
+    # Must pick the real amount, not the year.
+    text = "Total  5,00  2013\n"
+    assert _extract(text)["total"] == "5,00"
+
+
+def test_total_none_when_only_a_year():
+    # If the only thing on the total line looks like a year, we should return None.
+    text = "Total 2013\n"
+    assert _extract(text)["total"] is None
+
+
+def test_total_ignores_date_on_next_line():
+    # OCR quirk: "Total" alone, then a date (no real amount near the label).
+    # Must NOT return a day or month from the date.
+    text = "Total\n04/13/2013\nUM\n"
+    assert _extract(text)["total"] is None
+
+
+def test_compact_date_rejects_invalid_year():
+    # 8-digit invoice number 22083742 must NOT parse as DDMMYYYY (year 3742).
+    assert find_dates("Invoice number: 22083742") == []
+
+
+def test_compact_date_accepts_valid_year():
+    # 25122024 → 25/12/2024 (valid 20xx year).
+    assert find_dates("Paid 25122024") == ["25122024"]
+
+
+def test_extract_from_words_end_to_end():
+    # Two-column invoice simulated with word bboxes (mimics tesseract output).
+    from src.layout_extractor import extract_from_words
+    words = [
+        {"text": "Invoice", "x0": 100, "x1": 140, "top": 30, "bottom": 40},
+        {"text": "no:",     "x0": 145, "x1": 165, "top": 30, "bottom": 40},
+        {"text": "INV-42",  "x0": 200, "x1": 250, "top": 30, "bottom": 40},
+        {"text": "Date",    "x0": 100, "x1": 130, "top": 50, "bottom": 60},
+        {"text": "of",      "x0": 135, "x1": 150, "top": 50, "bottom": 60},
+        {"text": "issue:",  "x0": 155, "x1": 200, "top": 50, "bottom": 60},
+        {"text": "07/29/2011", "x0": 400, "x1": 470, "top": 50, "bottom": 60},
+        {"text": "Seller:", "x0": 100, "x1": 150, "top": 100, "bottom": 110},
+        {"text": "Wood-Kim","x0": 100, "x1": 160, "top": 120, "bottom": 130},
+        {"text": "Client:", "x0": 400, "x1": 450, "top": 100, "bottom": 110},
+        {"text": "Thompson","x0": 400, "x1": 470, "top": 120, "bottom": 130},
+        {"text": "PLC",     "x0": 475, "x1": 500, "top": 120, "bottom": 130},
+        {"text": "Total",   "x0": 100, "x1": 140, "top": 300, "bottom": 310},
+        {"text": "$164.97", "x0": 500, "x1": 560, "top": 300, "bottom": 310},
+    ]
+    got = extract_from_words(words)
+    assert got["invoice_number"] == "INV-42"
+    assert got["invoice_date"] == "07/29/2011"
+    assert got["issuer"] == "Wood-Kim"
+    assert got["recipient"] == "Thompson PLC"
+    assert got["total"] == "164.97"
