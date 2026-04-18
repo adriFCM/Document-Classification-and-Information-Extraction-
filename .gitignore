@@ -8,3 +8,9 @@ data/raw/
 data/processed/
 data/labeled/
 .venv/
+
+# Local-only dev helpers (never commit)
+justfile
+DEV_NOTES.md
+EXTRACTION_NOTES.md
+PIPELINE.md

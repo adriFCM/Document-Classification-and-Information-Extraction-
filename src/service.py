@@ -104,7 +104,7 @@ async def classify(file: UploadFile = File(...)):
     }
 
     if label == 'invoice':
-        response['invoice_fields'] = extract_invoice_fields(raw_text)
+        response['invoice_fields'] = extract_invoice_fields(raw_text, pdf_bytes=pdf_bytes)
 
     return response
 
@@ -121,4 +121,4 @@ async def extract(file: UploadFile = File(...)):
         text = pdf_to_text(pdf_bytes)
     except Exception as e:
         raise HTTPException(status_code=422, detail=f'could not read pdf: {e}')
-    return {'filename': file.filename, 'fields': extract_invoice_fields(text)}
+    return {'filename': file.filename, 'fields': extract_invoice_fields(text, pdf_bytes=pdf_bytes)}
