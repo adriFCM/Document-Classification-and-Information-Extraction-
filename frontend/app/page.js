@@ -40,6 +40,12 @@ const MOCK_RESULT = {
 }
 // ─────────────────────────────────────────────────────────────────────────────
 
+const MODELS = [
+  { key: 'linear_svc',          name: 'Linear SVM',        tag: 'Highest F1' },
+  { key: 'logistic_regression', name: 'Logistic Regression', tag: 'Calibrated' },
+  { key: 'sbert_logreg',        name: 'SBERT + LogReg',    tag: 'Most Robust' },
+]
+
 export default function Home() {
   const [step, setStep] = useState('upload')
   const [result, setResult] = useState(null)
@@ -48,8 +54,9 @@ export default function Home() {
   const [tick, setTick] = useState(0)
   const [dark, setDark] = useState(true)
   const [barWidth, setBarWidth] = useState(0)
+  const [selectedModel, setSelectedModel] = useState('logistic_regression')
 
-  // error state — stores a message if something goes wrong
+  // error state — stores a message if something went wrong
   const [error, setError] = useState(null)
 
   const t = {
@@ -82,6 +89,7 @@ export default function Home() {
           // ── REAL API MODE ─────────────────────────────────────────────────
           const formData = new FormData()
           formData.append('file', file)
+          formData.append('model', selectedModel)
 
           const response = await fetch(API_URL, {
             method: 'POST',
@@ -103,6 +111,7 @@ export default function Home() {
             category:   raw.label,
             confidence: Math.round((raw.confidence ?? 0) * 100),
             fields:     raw.invoice_fields ?? null,
+            modelUsed:  raw.model_used ?? selectedModel,
           }
           // ─────────────────────────────────────────────────────────────────
         }
@@ -309,7 +318,7 @@ export default function Home() {
               </div>
 
               {/* Category pills — each is a different shade of green */}
-              <div style={{ display: 'flex', gap: '8px', marginBottom: '12px', flexWrap: 'wrap' }}>
+              <div style={{ display: 'flex', gap: '8px', marginBottom: '16px', flexWrap: 'wrap' }}>
                 {pills.map(c => (
                   <span key={c.label} style={{
                     fontSize: '11px',
@@ -321,6 +330,61 @@ export default function Home() {
                     backgroundColor: `${c.color}11`
                   }}>{c.label}</span>
                 ))}
+              </div>
+
+              {/* Model selector */}
+              <div style={{ marginBottom: '12px' }}>
+                <p style={{ fontSize: '11px', fontFamily: 'monospace', color: t.textMuted, marginBottom: '8px', letterSpacing: '0.06em' }}>
+                  MODEL
+                </p>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                  {MODELS.map(m => {
+                    const active = selectedModel === m.key
+                    return (
+                      <button
+                        key={m.key}
+                        onClick={() => setSelectedModel(m.key)}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          padding: '10px 14px',
+                          borderRadius: '10px',
+                          border: `1px solid ${active ? t.accentText + '88' : t.borderSub}`,
+                          backgroundColor: active ? (dark ? 'rgba(163,230,53,0.06)' : 'rgba(63,98,18,0.06)') : t.surfaceAlt,
+                          cursor: 'pointer',
+                          transition: 'all 0.15s',
+                          textAlign: 'left',
+                        }}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                          <div style={{
+                            width: '14px', height: '14px',
+                            borderRadius: '50%',
+                            border: `2px solid ${active ? t.accentText : t.borderSub}`,
+                            backgroundColor: active ? t.accentText : 'transparent',
+                            flexShrink: 0,
+                            transition: 'all 0.15s',
+                          }}/>
+                          <span style={{ fontSize: '13px', fontWeight: active ? 600 : 400, color: active ? t.text : t.textMuted }}>
+                            {m.name}
+                          </span>
+                        </div>
+                        <span style={{
+                          fontSize: '10px',
+                          fontFamily: 'monospace',
+                          color: active ? t.accentText : t.textDim,
+                          padding: '2px 7px',
+                          borderRadius: '999px',
+                          border: `1px solid ${active ? t.accentText + '44' : t.borderSub}`,
+                          backgroundColor: active ? (dark ? 'rgba(163,230,53,0.08)' : 'rgba(63,98,18,0.08)') : 'transparent',
+                        }}>
+                          {m.tag}
+                        </span>
+                      </button>
+                    )
+                  })}
+                </div>
               </div>
 
               <button
@@ -399,9 +463,24 @@ export default function Home() {
                       </span>
                     </div>
                   </div>
-                  <p style={{ fontSize: '12px', fontFamily: 'monospace', color: t.textDim, marginTop: '6px' }}>
-                    {file?.name}
-                  </p>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginTop: '6px', flexWrap: 'wrap' }}>
+                    <p style={{ fontSize: '12px', fontFamily: 'monospace', color: t.textDim }}>
+                      {file?.name}
+                    </p>
+                    {result.modelUsed && (
+                      <span style={{
+                        fontSize: '10px',
+                        fontFamily: 'monospace',
+                        color: t.textMuted,
+                        padding: '2px 8px',
+                        borderRadius: '999px',
+                        border: `1px solid ${t.borderSub}`,
+                        backgroundColor: t.surfaceAlt,
+                      }}>
+                        {result.modelUsed}
+                      </span>
+                    )}
+                  </div>
                 </div>
                 <button
                   onClick={() => { setStep('upload'); setResult(null); setFile(null) }}
