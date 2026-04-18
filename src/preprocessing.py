@@ -36,9 +36,9 @@ _HYPHEN_BREAK_RE = re.compile(r'-\n')
 # These generate explicit tokens prepended to the cleaned text so TF-IDF can
 # use them as high-signal features, compensating for the small invoice class.
 _INV_SIGNALS: list[tuple[str, re.Pattern]] = [
-    ('__inv_number__',   re.compile(r'\b(invoice\s*n[o0]\.?|inv[- #]|invoice\s*number|bill\s*no)\b', re.I)),
+    ('__inv_number__',   re.compile(r'\b(invoice\s*n[o0]\.?|inv[- #]|invoice\s*#|invoice\s*number|bill\s*no)\b', re.I)),
     ('__inv_header__',   re.compile(r'\b(tax\s*invoice|commercial\s*invoice|invoice\b)', re.I)),
-    ('__bill_to__',      re.compile(r'\b(bill\s*to|billed\s*to|sold\s*to|issued\s*to)\b', re.I)),
+    ('__bill_to__',      re.compile(r'\b(bill\s*to|billed\s*to|sold\s*to|issued\s*to|invoiced\s*to)\b', re.I)),
     ('__amount_due__',   re.compile(r'\b(amount\s*due|balance\s*due|total\s*amount\s*due|total\s*due)\b', re.I)),
     ('__grand_total__',  re.compile(r'\b(grand\s*total|total\s*amount|subtotal|sub\s*total)\b', re.I)),
     ('__due_date__',     re.compile(r'\b(due\s*date|payment\s*due|pay\s*by|payment\s*terms)\b', re.I)),

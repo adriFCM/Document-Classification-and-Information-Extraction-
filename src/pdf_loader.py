@@ -40,7 +40,12 @@ def _extract_with_pdfplumber(path_or_bytes: PathLike) -> str:
 
 def _extract_with_ocr(path_or_bytes: PathLike) -> str:
     import pypdfium2 as pdfium
-    import pytesseract
+    try:
+        import pytesseract
+    except ImportError:
+        raise RuntimeError(
+            'pytesseract is not installed. Run: pip install pytesseract'
+        )
 
     if isinstance(path_or_bytes, (bytes, bytearray)):
         pdf = pdfium.PdfDocument(bytes(path_or_bytes))
@@ -50,7 +55,13 @@ def _extract_with_ocr(path_or_bytes: PathLike) -> str:
     pages = []
     for page in pdf:
         pil_image = page.render(scale=3.0).to_pil()
-        pages.append(pytesseract.image_to_string(pil_image))
+        try:
+            pages.append(pytesseract.image_to_string(pil_image))
+        except pytesseract.TesseractNotFoundError:
+            raise RuntimeError(
+                'Tesseract OCR binary not found on PATH. '
+                'Install it: https://github.com/tesseract-ocr/tesseract'
+            )
     return '\n'.join(pages)
 
 
