@@ -23,12 +23,15 @@ from pathlib import Path
 
 import pandas as pd
 from seqeval.metrics import classification_report, f1_score
-from sklearn.model_selection import KFold
+from sklearn.model_selection import KFold, train_test_split
+
+RANDOM_STATE = 42
+TEST_SIZE = 0.2
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 
-from crf_extractor import (  # noqa: E402
+from information_extraction import (  # noqa: E402
     CRFInvoiceExtractor,
     build_bio,
     flat_tokens,
@@ -143,7 +146,7 @@ def cv_report(lines_all, tags_all, n_splits: int = 5) -> None:
     if len(lines_all) < n_splits:
         print(f"  too few examples ({len(lines_all)}) for {n_splits}-fold CV")
         return
-    kf = KFold(n_splits=n_splits, shuffle=True, random_state=42)
+    kf = KFold(n_splits=n_splits, shuffle=True, random_state=RANDOM_STATE)
     fold_f1 = []
     all_pred, all_true = [], []
     for fold, (tr, te) in enumerate(kf.split(lines_all)):
@@ -164,6 +167,27 @@ def cv_report(lines_all, tags_all, n_splits: int = 5) -> None:
     print()
     print("Aggregated entity-level report:")
     print(classification_report(all_true, all_pred, digits=3))
+
+
+def holdout_report(
+    train_lines, train_tags, test_lines, test_tags
+) -> None:
+    """Train on train split, score once on held-out test split.
+
+    Separates the overfitting signal from CV: if CV F1 >> test F1 the model
+    is memorizing template quirks. Run BEFORE the final "train on all data"
+    step so the test set stays truly unseen during hyperparameter choices.
+    """
+    if not test_lines:
+        print("  (empty test split — skipped)")
+        return
+    clf = CRFInvoiceExtractor()
+    clf.train(train_lines, train_tags)
+    X_te = [sent_features(l) for l in test_lines]
+    y_te = [list(t) for t in test_tags]
+    y_pred = clf.model.predict(X_te)
+    print(f"  held-out F1 = {f1_score(y_te, y_pred):.3f}")
+    print(classification_report(y_te, y_pred, digits=3))
 
 
 def main() -> None:
@@ -187,13 +211,25 @@ def main() -> None:
     combined_tags = new_tags + sroie_tags
     print(f"  combined: {len(combined_lines)} examples")
 
+    # Reproducible train/test split BEFORE any model selection, so test F1 is
+    # a clean generalization estimate.
+    tr_lines, te_lines, tr_tags, te_tags = train_test_split(
+        combined_lines, combined_tags,
+        test_size=TEST_SIZE, random_state=RANDOM_STATE,
+    )
+    print(f"  train: {len(tr_lines)}   test: {len(te_lines)}"
+          f"   (seed={RANDOM_STATE})")
+
     print("\n=== 5-fold CV on NEW invoices only (issuer + recipient) ===")
     cv_report(new_lines, new_tags)
 
-    print("\n=== 5-fold CV on COMBINED (issuer benefits from SROIE) ===")
-    cv_report(combined_lines, combined_tags)
+    print("\n=== 5-fold CV on TRAIN split of COMBINED ===")
+    cv_report(tr_lines, tr_tags)
 
-    print("\nTraining final model on all data...")
+    print("\n=== Held-out TEST F1 (train on COMBINED train split) ===")
+    holdout_report(tr_lines, tr_tags, te_lines, te_tags)
+
+    print("\nTraining final model on all COMBINED data...")
     final = CRFInvoiceExtractor()
     final.train(combined_lines, combined_tags)
     final.save(MODEL_OUT)
