@@ -254,7 +254,7 @@ def _pick_value(
     compiled_labels: list[re.Pattern],
     words: list[dict],
     validate,
-    col_tol: float = 60.0,
+    col_tol: Optional[float] = None,
 ) -> Optional[str]:
     """General picker: try inline-right, then column-aligned below, then any below,
     applying ``validate(text)`` to each candidate until one passes.
@@ -262,6 +262,10 @@ def _pick_value(
     if not words:
         return None
     lh = _line_height(words)
+    # Scale by line height so the same ratio holds for pdfplumber points
+    # (lh ~12) and tesseract pixels (lh ~30–60). 60pt / 12pt ≈ 5.
+    if col_tol is None:
+        col_tol = max(60.0, lh * 5)
     for pat in compiled_labels:
         span = _find_label_span(pat, words)
         if span is None:
@@ -306,12 +310,14 @@ def _pick_value(
 def _pick_block_below(
     compiled_labels: list[re.Pattern],
     words: list[dict],
-    col_tol: float = 50.0,
+    col_tol: Optional[float] = None,
 ) -> Optional[str]:
     """For block labels (Seller:/Client:), return the first non-stop row below
     that is aligned with the label's x-column.
     """
     lh = _line_height(words)
+    if col_tol is None:
+        col_tol = max(50.0, lh * 4)
     for pat in compiled_labels:
         span = _find_label_span(pat, words)
         if span is None:
@@ -810,19 +816,24 @@ def extract_invoice_fields(
     text: str,
     pdf_bytes: Optional[bytes] = None,
     image_bytes: Optional[bytes] = None,
+    words: Optional[list[dict]] = None,
 ) -> dict:
     """Extract six invoice fields from text and/or bbox data.
 
     Priority per field: layout result (when word boxes available) → text result.
+    Pass ``words`` directly to skip the internal OCR/parse step when the caller
+    already has word-box data.
     """
     layout: Optional[dict] = None
-    if pdf_bytes is not None:
+    if words is not None:
+        layout = extract_from_words(words)
+    elif pdf_bytes is not None:
         layout = _extract_from_pdf_bytes(pdf_bytes)
     elif image_bytes is not None:
         try:
             from src.pdf_loader import image_to_words
-            words = image_to_words(image_bytes)
-            layout = extract_from_words(words)
+            ocr_words = image_to_words(image_bytes)
+            layout = extract_from_words(ocr_words)
         except Exception:
             layout = None
 

@@ -116,7 +116,7 @@ def main() -> None:
             img_bytes = img_path.read_bytes()
             words = image_to_words(img_bytes)
             text = image_to_full_text(words)
-            pred = extract_invoice_fields(text, image_bytes=img_bytes)
+            pred = extract_invoice_fields(text, words=words)
         except Exception as e:
             print(f"  ERR {fname}: {e}")
             continue
