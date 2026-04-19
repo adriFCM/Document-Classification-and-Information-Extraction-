@@ -5,8 +5,7 @@ folders = [
     "data/raw/emails",
     "data/raw/contracts",
     "data/raw/news",
-    "data/processed",
-    "data/labeled"
+    "data/processed"
 ]
 
 for folder in folders:
