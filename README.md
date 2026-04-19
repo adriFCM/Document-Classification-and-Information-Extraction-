@@ -25,7 +25,7 @@ The project currently includes these document classes:
 ```
 ├── data/
 │   ├── raw/          ← downloaded source datasets
-│   ├── processed/    ← cleaned datasets
+│   └── processed/    ← cleaned datasets
 
 ├── docs/
 │   └── superpowers/   ← design/spec notes for the invoice extraction redesign
@@ -229,7 +229,6 @@ It extracts these fields:
 - `recipient`
 - `total`
 
-The extractor is evaluated on SROIE-style receipts, with only the overlapping fields reported against the benchmark ground truth.
 
 ## Notes
 
