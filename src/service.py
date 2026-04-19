@@ -26,8 +26,10 @@ from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 
 from src.information_extraction import extract_invoice_fields
-from src.pdf_loader import pdf_to_text
+from src.pdf_loader import pdf_to_text, image_to_text
 from src.preprocessing import clean_for_classifier, _INV_SIGNALS
+
+_ALLOWED_EXTENSIONS = {'.pdf', '.jpg', '.jpeg', '.png'}
 
 _MODELS_DIR = Path(__file__).parent.parent / 'models'
 
@@ -154,16 +156,17 @@ async def classify(
         file:  The PDF to classify.
         model: One of 'linear_svc', 'logistic_regression', 'sbert_logreg', or 'auto'.
     """
-    if not (file.filename or '').lower().endswith('.pdf'):
-        raise HTTPException(status_code=400, detail='file must be a .pdf')
+    ext = Path(file.filename or '').suffix.lower()
+    if ext not in _ALLOWED_EXTENSIONS:
+        raise HTTPException(status_code=400, detail='file must be a .pdf, .jpg, or .png')
     pdf_bytes = await file.read()
     if not pdf_bytes:
         raise HTTPException(status_code=400, detail='empty upload')
 
     try:
-        raw_text = pdf_to_text(pdf_bytes)
+        raw_text = pdf_to_text(pdf_bytes) if ext == '.pdf' else image_to_text(pdf_bytes)
     except Exception as e:
-        raise HTTPException(status_code=422, detail=f'could not read pdf: {e}')
+        raise HTTPException(status_code=422, detail=f'could not read file: {e}')
 
     mtype, encoder, clf = _load_named_model(model)
 
@@ -199,7 +202,10 @@ async def classify(
     }
 
     if label == 'invoice':
-        response['invoice_fields'] = extract_invoice_fields(raw_text, pdf_bytes=pdf_bytes)
+        response['invoice_fields'] = extract_invoice_fields(
+            raw_text,
+            pdf_bytes=pdf_bytes if ext == '.pdf' else None,
+        )
 
     return response
 
@@ -207,13 +213,17 @@ async def classify(
 @app.post('/extract')
 async def extract(file: UploadFile = File(...)):
     """Extract invoice fields from a PDF without running classification."""
-    if not (file.filename or '').lower().endswith('.pdf'):
-        raise HTTPException(status_code=400, detail='file must be a .pdf')
+    ext = Path(file.filename or '').suffix.lower()
+    if ext not in _ALLOWED_EXTENSIONS:
+        raise HTTPException(status_code=400, detail='file must be a .pdf, .jpg, or .png')
     pdf_bytes = await file.read()
     if not pdf_bytes:
         raise HTTPException(status_code=400, detail='empty upload')
     try:
-        text = pdf_to_text(pdf_bytes)
+        text = pdf_to_text(pdf_bytes) if ext == '.pdf' else image_to_text(pdf_bytes)
     except Exception as e:
-        raise HTTPException(status_code=422, detail=f'could not read pdf: {e}')
-    return {'filename': file.filename, 'fields': extract_invoice_fields(text, pdf_bytes=pdf_bytes)}
+        raise HTTPException(status_code=422, detail=f'could not read file: {e}')
+    return {
+        'filename': file.filename,
+        'fields':   extract_invoice_fields(text, pdf_bytes=pdf_bytes if ext == '.pdf' else None),
+    }

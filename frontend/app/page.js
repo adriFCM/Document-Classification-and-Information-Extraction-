@@ -310,7 +310,7 @@ export default function Home() {
                       <p style={{ fontSize: '12px', color: t.textDim }}>PDF only</p>
                     </>
                 }
-                <input id="file-input" type="file" accept=".pdf" style={{ display: 'none' }}
+                <input id="file-input" type="file" accept=".pdf,.jpg,.jpeg,.png" style={{ display: 'none' }}
                   onChange={(e) => {
                     setFile(e.target.files[0])
                     setError(null)
