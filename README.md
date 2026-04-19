@@ -33,8 +33,8 @@ The project currently includes these document classes:
 │   ├── 01_data_collection.ipynb
 │   ├── 02_EDA.ipynb
 │   ├── 03_preprocessing.ipynb
-│   ├── 04_classification.ipynb
-│   ├── 05_information_extraction.ipynb
+│   ├── 04_information_extraction.ipynb
+│   ├── 05_classification.ipynb
 │   └── ...
 ├── scripts/
 │   ├── eval_invoices.py
@@ -128,8 +128,8 @@ Run the notebooks in this order:
 1. [notebooks/01_data_collection.ipynb](notebooks/01_data_collection.ipynb) — download raw datasets.
 2. [notebooks/02_EDA.ipynb](notebooks/02_EDA.ipynb) — inspect the datasets and basic patterns.
 3. [notebooks/03_preprocessing.ipynb](notebooks/03_preprocessing.ipynb) — clean the data and build the merged labeled dataset.
-4. [notebooks/04_classification.ipynb](notebooks/04_classification.ipynb) — train and evaluate classifiers.
-5. [notebooks/05_information_extraction.ipynb](notebooks/05_information_extraction.ipynb) — evaluate invoice field extraction.
+4. [notebooks/04_information_extraction.ipynb](notebooks/04_information_extraction.ipynb) — evaluate invoice field extraction.
+5. [notebooks/05_classification.ipynb](notebooks/05_classification.ipynb) — train and evaluate classifiers.
 
 ### Backend service
 
