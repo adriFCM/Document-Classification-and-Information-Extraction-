@@ -33,7 +33,7 @@ _DATE_PATTERNS = [
     r"\b((?:0?[1-9]|[12]\d|3[01])[/\-\.](?:0?[1-9]|1[0-2])[/\-\.](?:\d{4}|\d{2}))\b",
     r"\b((?:0?[1-9]|1[0-2])[/\-\.](?:0?[1-9]|[12]\d|3[01])[/\-\.](?:\d{4}|\d{2}))\b",
     r"\b(\d{4}[/\-\.](?:0?[1-9]|1[0-2])[/\-\.](?:0?[1-9]|[12]\d|3[01]))\b",
-    r"\b((?:0?[1-9]|[12]\d|3[01])\s+" + _MONTHS + r"\.?\s+\d{2,4})\b",
+    r"\b((?:0?[1-9]|[12]\d|3[01])\s+" + _MONTHS + r"\.?,?\s+\d{2,4})\b",
     r"\b(" + _MONTHS + r"\.?\s+(?:0?[1-9]|[12]\d|3[01]),?\s+\d{2,4})\b",
     r"\b(" + _MONTHS + r"[\./\-](?:0?[1-9]|[12]\d|3[01])[\./\-]\d{2,4})\b",
 ]
@@ -66,6 +66,7 @@ _LABELS: dict[str, list[str]] = {
         r"ref\s*(?:no|#)?\.?",
         r"order\s*(?:no|number|#)\.?",
         r"po\s*(?:no|#)?\.?",
+        r"no\.?",
     ],
     "invoice_date": [
         r"date\s*of\s*issue",
@@ -656,7 +657,8 @@ def _extract_from_pdf_bytes(pdf_bytes: bytes) -> dict[str, Optional[str]]:
 # =====================================================================
 
 _INV_NUMBER_TEXT_LABEL = re.compile(
-    r"(?:invoice\s*(?:no|number|num|#)|inv\s*[#:]|bill\s*no)\.?\s*[:#]?\s*",
+    r"(?:invoice\s*(?:no|number|num|#)|inv\s*[#:]|bill\s*no|\bno\.)"
+    r"\.?\s*[:#]?\s*",
     re.IGNORECASE,
 )
 _INV_NUMBER_TEXT_VALUE = re.compile(r"(#?[A-Z0-9][A-Z0-9\-/]{2,19})")
