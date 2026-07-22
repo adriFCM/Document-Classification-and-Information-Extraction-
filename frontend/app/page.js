@@ -22,7 +22,7 @@ const CATEGORY_STYLES = {
 const USE_MOCK = true
 
 // The URL of the Python backend — change this if the backend runs on a different port
-const API_URL = 'http://localhost:8000/predict'
+const API_URL = 'http://localhost:8000/classify'
 
 // Mock data that simulates what the backend would return
 // This is used when USE_MOCK is true
